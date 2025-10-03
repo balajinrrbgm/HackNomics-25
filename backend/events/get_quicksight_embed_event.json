@@ -1,0 +1,9 @@
+{
+  "resource": "/api/quicksight-embed",
+  "path": "/api/quicksight-embed",
+  "httpMethod": "GET",
+  "headers": {
+    "Accept": "application/json",
+    "Host": "localhost:3000"
+  }
+}

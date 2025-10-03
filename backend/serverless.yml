@@ -1,0 +1,140 @@
+service: econosense-backend
+
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: python3.9
+  region: ${opt:region, 'us-east-1'}
+  stage: ${opt:stage, 'dev'}
+  environment:
+    ECONOMIC_DATA_TABLE: ${self:service}-${self:provider.stage}-economic-data
+    SENTIMENT_DATA_TABLE: ${self:service}-${self:provider.stage}-sentiment-data
+    FINBERT_ENDPOINT: ${self:service}-${self:provider.stage}-finbert
+    QUICKSIGHT_DASHBOARD_ID: ${param:quicksightDashboardId}
+    AWS_ACCOUNT_ID: ${aws:accountId}
+  
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+          Resource: 
+            - !GetAtt EconomicDataTable.Arn
+            - !GetAtt SentimentDataTable.Arn
+        - Effect: Allow
+          Action:
+            - comprehend:DetectSentiment
+          Resource: '*'
+        - Effect: Allow
+          Action:
+            - sagemaker:InvokeEndpoint
+          Resource: !Sub arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:endpoint/${self:service}-${self:provider.stage}-finbert
+        - Effect: Allow
+          Action:
+            - quicksight:GetDashboardEmbedUrl
+          Resource: !Sub arn:aws:quicksight:${AWS::Region}:${AWS::AccountId}:dashboard/${param:quicksightDashboardId}
+
+package:
+  patterns:
+    - '!node_modules/**'
+    - '!venv/**'
+    - '!__pycache__/**'
+    - '!.pytest_cache/**'
+    - '!tests/**'
+    - '!requirements.txt'
+
+functions:
+  getEconomicData:
+    handler: src/handlers/economic_data.lambda_handler
+    events:
+      - http:
+          path: /api/economic-data
+          method: get
+          cors: true
+    layers:
+      - !Ref DependenciesLayer
+
+  analyzeSentiment:
+    handler: src/handlers/sentiment_analysis.lambda_handler
+    events:
+      - http:
+          path: /api/sentiment
+          method: post
+          cors: true
+      - http:
+          path: /api/sentiment
+          method: get
+          cors: true
+    layers:
+      - !Ref DependenciesLayer
+
+  getQuicksightEmbed:
+    handler: src/handlers/quicksight_embed.lambda_handler
+    events:
+      - http:
+          path: /api/quicksight-embed
+          method: get
+          cors: true
+    layers:
+      - !Ref DependenciesLayer
+
+resources:
+  Resources:
+    EconomicDataTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.ECONOMIC_DATA_TABLE}
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: timestamp
+            AttributeType: S
+          - AttributeName: indicator
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+          - AttributeName: timestamp
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: indicator-timestamp-index
+            KeySchema:
+              - AttributeName: indicator
+                KeyType: HASH
+              - AttributeName: timestamp
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+        BillingMode: PAY_PER_REQUEST
+
+    SentimentDataTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.SENTIMENT_DATA_TABLE}
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: timestamp
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+          - AttributeName: timestamp
+            KeyType: RANGE
+        BillingMode: PAY_PER_REQUEST
+
+    DependenciesLayer:
+      Type: AWS::Lambda::LayerVersion
+      Properties:
+        LayerName: ${self:service}-${self:provider.stage}-dependencies
+        Description: Dependencies for Lambda functions
+        CompatibleRuntimes:
+          - python3.9
+        Content:
+          S3Bucket: ${param:layersBucket}
+          S3Key: layers/dependencies.zip

@@ -1,0 +1,126 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+  QuickSightDashboardId:
+    Type: String
+    Default: your-dashboard-id
+
+Globals:
+  Function:
+    Runtime: python3.9
+    Timeout: 30
+    MemorySize: 256
+    Environment:
+      Variables:
+        ECONOMIC_DATA_TABLE: !Sub ${AWS::StackName}-economic-data
+        SENTIMENT_DATA_TABLE: !Sub ${AWS::StackName}-sentiment-data
+        FINBERT_ENDPOINT: !Sub ${AWS::StackName}-finbert
+        QUICKSIGHT_DASHBOARD_ID: !Ref QuickSightDashboardId
+        AWS_ACCOUNT_ID: !Ref AWS::AccountId
+
+Resources:
+  GetEconomicDataFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src
+      Handler: handlers/economic_data.lambda_handler
+      Events:
+        GetEconomicData:
+          Type: Api
+          Properties:
+            Path: /api/economic-data
+            Method: get
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref EconomicDataTable
+
+  AnalyzeSentimentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src
+      Handler: handlers/sentiment_analysis.lambda_handler
+      Events:
+        AnalyzeSentimentPost:
+          Type: Api
+          Properties:
+            Path: /api/sentiment
+            Method: post
+        AnalyzeSentimentGet:
+          Type: Api
+          Properties:
+            Path: /api/sentiment
+            Method: get
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SentimentDataTable
+        - ComprehendBasicAccessPolicy: {}
+        - Statement:
+          - Effect: Allow
+            Action:
+              - sagemaker:InvokeEndpoint
+            Resource: !Sub arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:endpoint/${AWS::StackName}-finbert
+
+  GetQuicksightEmbedFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./src
+      Handler: handlers/quicksight_embed.lambda_handler
+      Events:
+        GetQuicksightEmbed:
+          Type: Api
+          Properties:
+            Path: /api/quicksight-embed
+            Method: get
+      Policies:
+        - Statement:
+          - Effect: Allow
+            Action:
+              - quicksight:GetDashboardEmbedUrl
+            Resource: !Sub arn:aws:quicksight:${AWS::Region}:${AWS::AccountId}:dashboard/${QuickSightDashboardId}
+
+  EconomicDataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${AWS::StackName}-economic-data
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+        - AttributeName: indicator
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: indicator-timestamp-index
+          KeySchema:
+            - AttributeName: indicator
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      BillingMode: PAY_PER_REQUEST
+
+  SentimentDataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${AWS::StackName}-sentiment-data
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      BillingMode: PAY_PER_REQUEST

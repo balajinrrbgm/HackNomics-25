@@ -1,0 +1,14 @@
+{
+  "resource": "/api/economic-data",
+  "path": "/api/economic-data",
+  "httpMethod": "GET",
+  "queryStringParameters": {
+    "indicator": "GDP",
+    "startDate": "2025-10-01",
+    "endDate": "2025-10-31"
+  },
+  "headers": {
+    "Accept": "application/json",
+    "Host": "localhost:3000"
+  }
+}

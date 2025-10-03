@@ -1,0 +1,13 @@
+{
+  "resource": "/api/sentiment",
+  "path": "/api/sentiment",
+  "httpMethod": "POST",
+  "queryStringParameters": {
+    "text": "The Federal Reserve has decided to maintain current interest rates, citing strong economic indicators",
+    "source": "news"
+  },
+  "headers": {
+    "Accept": "application/json",
+    "Host": "localhost:3000"
+  }
+}
